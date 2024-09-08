@@ -1,0 +1,52 @@
+name: Update Dependabot Pull Request Dependencies
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize  # Triggers when the PR is updated
+
+permissions:
+  contents: write  # Ensure the token has write permissions
+
+jobs:
+  update_dependabot_pr:
+    if: github.actor == 'dependabot[bot]'  # Only trigger for Dependabot PRs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}  # Checkout the Dependabot PR branch
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: composer
+
+      - name: Install Dependencies
+        run: composer install --no-dev --optimize-autoloader
+
+      - name: Extract Dependency from PR Title
+        id: extract_dependency
+        run: |
+          # Extract the dependency name from the PR title
+          DEPENDENCY=$(echo "${{ github.event.pull_request.title }}" | grep -oP '(?<=bump ).*(?= from)')
+          echo "DEPENDENCY=$DEPENDENCY" >> $GITHUB_ENV
+
+      - name: Update Specific Dependency
+        run: composer update ${{ env.DEPENDENCY }}  # Only update the dependency from the PR title
+
+      - name: Commit and Push Changes to Dependabot's Branch
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add composer.lock lib/vendor/  # Ensure the composer.lock and vendor changes are staged
+          git commit -m "Update composer.lock and vendor for ${{ env.DEPENDENCY }} dependency"
+          git push origin ${{ github.event.pull_request.head.ref }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
